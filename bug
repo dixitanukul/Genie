@@ -1,0 +1,11 @@
+PermissionError: [Errno 13] Permission denied: '/tmp/.streamlit/config.toml'
+File <command-7597083230088489>, line 36
+     34 os.makedirs("/tmp", exist_ok=True)
+     35 for src, dst in files.items():
+---> 36     pathlib.Path("/tmp/.streamlit/config.toml").write_text('browser.gatherUsageStats = false\n', encoding="utf-8")
+     38 ctx = dbutils.notebook.entry_point.getDbutils().notebook().getContext()
+     39 _get = lambda o: o.get() if o and o.isDefined() else None
+File /usr/lib/python3.12/pathlib.py:1015, in Path.open(self, mode, buffering, encoding, errors, newline)
+   1013 if "b" not in mode:
+   1014     encoding = io.text_encoding(encoding)
+-> 1015 return io.open(self, mode, buffering, encoding, errors, newline)
