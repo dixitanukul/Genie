@@ -1,38 +1,78 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC ## Genie Modular App Launcher
-# MAGIC This notebook will launch the Streamlit app using the modularized files:
-# MAGIC - `/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py`
-# MAGIC - `/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py`
+# MAGIC ### Genie Modular App — Proxy-safe Launcher
+# MAGIC This notebook launches Streamlit and prints Databricks driver-proxy URLs you can open in a new tab.
 
 # COMMAND ----------
 
-import os
-import subprocess
+import os, subprocess, time, shlex
 
-# Paths to your files in Databricks workspace
-app_path = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py"
-utils_path = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py"
+APP_PATH   = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py"
+UTILS_PATH = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py"
+PORT       = "8501"
 
-# Ensure both files exist
-for path in [app_path, utils_path]:
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"File not found: {path}")
+for p in (APP_PATH, UTILS_PATH):
+    if not os.path.exists(p):
+        raise FileNotFoundError(f"Not found: {p}")
 
-print("Verified app and utils file are available.")
+print("✅ Verified app files exist.")
 
 # COMMAND ----------
 
-# Launch the Streamlit app
-# Note: Streamlit runs on a driver node, not cluster workers
-# You can access via the driver node's public URL + port
-cmd = [
-    "streamlit", "run", app_path,
-    "--server.port", "8501",
-    "--server.address", "0.0.0.0"
-]
+# Start Streamlit in the background (idempotent-ish: if it's already running, the next cell URLs will still work)
+cmd = f"streamlit run {shlex.quote(APP_PATH)} --server.port {PORT} --server.address 0.0.0.0"
+print("Launching:", cmd)
+proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-process = subprocess.Popen(cmd)
+# Give Streamlit a moment to boot before printing URLs
+time.sleep(5)
+print("✅ Streamlit process started (check URLs in next cell).")
 
-print("Streamlit app launched. Access it at:")
-print("👉 http://<driver-node-host>:8501")
+# COMMAND ----------
+
+# Construct likely driver-proxy URLs (new & legacy patterns)
+# Different workspaces use different proxy paths; we print a few candidates.
+def _get(conf_key, default=""):
+    try:
+        return spark.conf.get(conf_key)
+    except Exception:
+        return default
+
+workspace_host = _get("spark.databricks.workspaceUrl")
+org_id         = _get("spark.databricks.workspaceId") or _get("spark.databricks.clusterUsageTags.orgId")  # one of these is usually set
+cluster_id     = _get("spark.databricks.clusterUsageTags.clusterId")
+
+candidates = []
+if workspace_host and cluster_id:
+    # Newer proxy API
+    if org_id:
+        candidates.append(f"https://{workspace_host}/driver-proxy-api/o/{org_id}/{cluster_id}/{PORT}/")
+    # Legacy proxy path
+    if org_id:
+        candidates.append(f"https://{workspace_host}/driver-proxy/o/{org_id}/{cluster_id}/{PORT}/")
+    # Fallback (org-less) variant some workspaces accept
+    candidates.append(f"https://{workspace_host}/driver-proxy/{cluster_id}/{PORT}/")
+
+print("🔗 Try opening one of these URLs in a NEW browser tab:")
+for i, url in enumerate(candidates, 1):
+    print(f"{i}. {url}")
+
+if not candidates:
+    print("Could not compose proxy URL. Retrieve your workspace host/org/cluster IDs and build:\n"
+          "  https://<workspace-host>/driver-proxy-api/o/<org-id>/<cluster-id>/8501/\n"
+          "or\n"
+          "  https://<workspace-host>/driver-proxy/o/<org-id>/<cluster-id>/8501/")
+
+# COMMAND ----------
+
+# (Optional) show live logs to help diagnose boot issues
+import threading, sys
+
+def _pipe_output(stream):
+    for line in iter(stream.readline, b""):
+        sys.stdout.write(line.decode(errors="ignore"))
+        sys.stdout.flush()
+
+t = threading.Thread(target=_pipe_output, args=(proc.stdout,), daemon=True)
+t.start()
+print("📜 Streaming Streamlit logs below (useful if the app fails to load).")
