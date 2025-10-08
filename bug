@@ -1,4 +1,38 @@
-uc_streamlit = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py"
-uc_mainlogic = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py"
+# Databricks notebook source
+# MAGIC %md
+# MAGIC ## Genie Modular App Launcher
+# MAGIC This notebook will launch the Streamlit app using the modularized files:
+# MAGIC - `/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py`
+# MAGIC - `/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py`
 
+# COMMAND ----------
 
+import os
+import subprocess
+
+# Paths to your files in Databricks workspace
+app_path = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/app.py"
+utils_path = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py"
+
+# Ensure both files exist
+for path in [app_path, utils_path]:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+
+print("Verified app and utils file are available.")
+
+# COMMAND ----------
+
+# Launch the Streamlit app
+# Note: Streamlit runs on a driver node, not cluster workers
+# You can access via the driver node's public URL + port
+cmd = [
+    "streamlit", "run", app_path,
+    "--server.port", "8501",
+    "--server.address", "0.0.0.0"
+]
+
+process = subprocess.Popen(cmd)
+
+print("Streamlit app launched. Access it at:")
+print("👉 http://<driver-node-host>:8501")
