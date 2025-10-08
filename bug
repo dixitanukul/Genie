@@ -1,7 +1,7 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC ### Genie Modular App — Proxy-safe Launcher
-# MAGIC This notebook launches Streamlit and prints Databricks driver-proxy URLs you can open in a new tab.
+# MAGIC ### Genie Modular App — Simplified Launcher
+# MAGIC This notebook launches your Streamlit app and prints only the working proxy URL.
 
 # COMMAND ----------
 
@@ -11,27 +11,25 @@ APP_PATH   = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_ge
 UTILS_PATH = "/Workspace/Users/adixit01@blueshieldca.com/Genie_modular/anukul_genie/api_utils.py"
 PORT       = "8501"
 
+# Verify both files exist
 for p in (APP_PATH, UTILS_PATH):
     if not os.path.exists(p):
         raise FileNotFoundError(f"Not found: {p}")
-
 print("✅ Verified app files exist.")
 
 # COMMAND ----------
 
-# Start Streamlit in the background (idempotent-ish: if it's already running, the next cell URLs will still work)
+# Start Streamlit in background
 cmd = f"streamlit run {shlex.quote(APP_PATH)} --server.port {PORT} --server.address 0.0.0.0"
 print("Launching:", cmd)
 proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
-# Give Streamlit a moment to boot before printing URLs
-time.sleep(5)
-print("✅ Streamlit process started (check URLs in next cell).")
+time.sleep(5)  # wait for server to boot
+print("✅ Streamlit app started.")
 
 # COMMAND ----------
 
-# Construct likely driver-proxy URLs (new & legacy patterns)
-# Different workspaces use different proxy paths; we print a few candidates.
+# Build the known working proxy URL (the 2nd style)
 def _get(conf_key, default=""):
     try:
         return spark.conf.get(conf_key)
@@ -39,40 +37,25 @@ def _get(conf_key, default=""):
         return default
 
 workspace_host = _get("spark.databricks.workspaceUrl")
-org_id         = _get("spark.databricks.workspaceId") or _get("spark.databricks.clusterUsageTags.orgId")  # one of these is usually set
+org_id         = _get("spark.databricks.workspaceId") or _get("spark.databricks.clusterUsageTags.orgId")
 cluster_id     = _get("spark.databricks.clusterUsageTags.clusterId")
 
-candidates = []
-if workspace_host and cluster_id:
-    # Newer proxy API
-    if org_id:
-        candidates.append(f"https://{workspace_host}/driver-proxy-api/o/{org_id}/{cluster_id}/{PORT}/")
-    # Legacy proxy path
-    if org_id:
-        candidates.append(f"https://{workspace_host}/driver-proxy/o/{org_id}/{cluster_id}/{PORT}/")
-    # Fallback (org-less) variant some workspaces accept
-    candidates.append(f"https://{workspace_host}/driver-proxy/{cluster_id}/{PORT}/")
-
-print("🔗 Try opening one of these URLs in a NEW browser tab:")
-for i, url in enumerate(candidates, 1):
-    print(f"{i}. {url}")
-
-if not candidates:
-    print("Could not compose proxy URL. Retrieve your workspace host/org/cluster IDs and build:\n"
-          "  https://<workspace-host>/driver-proxy-api/o/<org-id>/<cluster-id>/8501/\n"
-          "or\n"
-          "  https://<workspace-host>/driver-proxy/o/<org-id>/<cluster-id>/8501/")
+if workspace_host and org_id and cluster_id:
+    url = f"https://{workspace_host}/driver-proxy/o/{org_id}/{cluster_id}/{PORT}/"
+    print("🔗 Open your app here:")
+    print(url)
+else:
+    print("⚠️ Could not build URL — missing host/org/cluster info from Spark conf.")
 
 # COMMAND ----------
 
-# (Optional) show live logs to help diagnose boot issues
+# (Optional) stream logs
 import threading, sys
-
-def _pipe_output(stream):
+def _pipe(stream):
     for line in iter(stream.readline, b""):
         sys.stdout.write(line.decode(errors="ignore"))
         sys.stdout.flush()
 
-t = threading.Thread(target=_pipe_output, args=(proc.stdout,), daemon=True)
+t = threading.Thread(target=_pipe, args=(proc.stdout,), daemon=True)
 t.start()
-print("📜 Streaming Streamlit logs below (useful if the app fails to load).")
+print("📜 Streaming Streamlit logs below…")
