@@ -4,18 +4,208 @@ import time
 import random
 import os
 import requests
+from io import StringIO
 
-# -----------------------------
-# Auth / Config (unchanged)
-# -----------------------------
+# =========================================================
+# Page setup (UI only)
+# =========================================================
+st.set_page_config(
+    page_title="💬 Smart Data Assistant",
+    page_icon="💬",
+    layout="wide",
+    menu_items={
+        "Report a bug": "mailto:your-team@example.com",
+        "About": "Smart Data Assistant • Databricks Genie helper • Streamlit UI"
+    }
+)
+
+# =========================================================
+# CSS — modern, dark-mode friendly, responsive
+# (UI only; no change to business logic)
+# =========================================================
+st.markdown("""
+<style>
+/* --- Base tweaks --- */
+:root {
+  --brand: #5b8def;         /* primary */
+  --brand-ink: #173b8b;     /* darker */
+  --bg: #f7f8fb;            /* light surface */
+  --ink: #0f172a;
+  --muted: #64748b;
+  --card: #ffffff;
+  --ring: rgba(91, 141, 239, 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1220;
+    --ink: #e2e8f0;
+    --muted: #94a3b8;
+    --card: #111827;
+    --ring: rgba(91, 141, 239, 0.25);
+  }
+}
+
+html, body, [data-testid="stAppViewContainer"] {
+  background: linear-gradient(135deg, var(--bg), rgba(91,141,239,0.05));
+}
+
+.block-container {
+  padding-top: 1rem;
+  padding-bottom: 3.5rem;
+}
+
+/* --- Header bar --- */
+.hero {
+  background: linear-gradient(180deg, rgba(91,141,239,0.10), transparent);
+  border: 1px solid rgba(99,102,241,0.10);
+  border-radius: 20px;
+  padding: 1.25rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.hero h1 {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.hero-sub {
+  margin-top: .35rem;
+  color: var(--muted);
+}
+
+/* --- Input area --- */
+.input-slab {
+  background: var(--card);
+  border: 1px solid rgba(2,6,23,0.06);
+  box-shadow: 0 6px 24px rgba(2,6,23,0.06);
+  border-radius: 16px;
+  padding: .9rem;
+  margin-bottom: 1rem;
+}
+
+/* --- Chat card --- */
+.chat-container {
+  background: var(--card);
+  border: 1px solid rgba(2,6,23,0.06);
+  border-radius: 16px;
+  padding: 1rem;
+  margin-bottom: .9rem;
+  box-shadow: 0 6px 24px rgba(2,6,23,0.06);
+}
+
+.badge {
+  display: inline-flex;
+  gap: .5rem;
+  align-items: center;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .75rem;
+  line-height: 1rem;
+  background: rgba(91,141,239,0.12);
+  color: var(--brand-ink);
+  border: 1px solid rgba(91,141,239,0.20);
+}
+
+.question-box {
+    background: linear-gradient(180deg, rgba(232,240,254,0.75), rgba(232,240,254,0.35));
+    padding: .9rem;
+    border-radius: 12px;
+    font-weight: 600;
+    color: #1a237e;
+    border: 1px solid rgba(26,35,126,0.08);
+}
+
+.answer-box {
+    background: linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0.25));
+    padding: .9rem;
+    border-radius: 12px;
+    color: var(--ink);
+    border: 1px solid rgba(2,6,23,0.06);
+}
+
+.sql-box {
+    background-color: #0b1020;
+    color: #e2e8f0;
+    padding: .8rem;
+    border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    border: 1px solid rgba(148,163,184,0.25);
+    overflow-x: auto;
+}
+
+/* --- Feedback buttons --- */
+.feedback-row button[kind="secondary"] {
+    border: 1px solid rgba(2,6,23,0.10);
+    background: linear-gradient(180deg, rgba(2,6,23,0.03), rgba(2,6,23,0.01));
+}
+
+.feedback-row .stButton>button {
+    border-radius: 10px !important;
+}
+
+/* --- Pill buttons --- */
+.btn-primary .stButton>button {
+  width: 100%;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 1px solid rgba(2,6,23,0.08);
+  background: linear-gradient(180deg, var(--brand), #4b78d7);
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(91,141,239,0.35);
+}
+
+.btn-primary .stButton>button:hover {
+  filter: brightness(1.03);
+}
+
+/* --- Small helpers --- */
+.hr-soft {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, rgba(2,6,23,0.12), transparent);
+  margin: 1rem 0 0.5rem 0;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+.dim { color: var(--muted); }
+
+/* tighten dataframe header */
+[data-testid="stDataFrame"] div[data-testid="stHeader"] {
+  background: transparent;
+}
+
+/* cards hover */
+.chat-container:hover {
+  border-color: rgba(91,141,239,0.28);
+  box-shadow: 0 8px 28px rgba(91,141,239,0.15);
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================================================
+# Session state (unchanged logic)
+# =========================================================
 if "user_access_token" not in st.session_state:
     st.session_state.user_access_token = os.environ.get("DATABRICKS_TOKEN")
-
 host_name = "https://adb-640321604414221.1.azuredatabricks.net"
-space_id = '01f0a7f4557013988ce0f20db008067e'
+space_id='01f0a7f4557013988ce0f20db008067e'
 Conversation_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/start-conversation"
 
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = None
+if "show_sql" not in st.session_state:
+    st.session_state.show_sql = {}
+if "message_id" not in st.session_state:
+    st.session_state.message_id = None
+if "qa_history" not in st.session_state:
+    st.session_state.qa_history = []
 
+# =========================================================
+# Backend calls (unchanged logic)
+# =========================================================
 def New_Chat(user_input):
     response = requests.post(
         Conversation_url,
@@ -29,9 +219,8 @@ def New_Chat(user_input):
     message_id = response.json().get("message_id")
     return conversation_id, message_id
 
-
 def fetch_question_response(conversation_id, message_id):
-    response_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}"
+    response_url =  f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}"
     query_response = requests.get(
         response_url,
         headers={
@@ -40,7 +229,6 @@ def fetch_question_response(conversation_id, message_id):
         }
     )
     return query_response
-
 
 def fetch_results(conversation_id, message_id, attachment_id):
     execute_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/attachments/{attachment_id}/execute-query"
@@ -53,8 +241,7 @@ def fetch_results(conversation_id, message_id, attachment_id):
     )
     return results
 
-
-def get_data(conversation_id, message_id, attachment_id):
+def get_data (conversation_id, message_id, attachment_id):
     get_data_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/attachments/{attachment_id}/query-result"
     results = requests.get(
         get_data_url,
@@ -65,11 +252,11 @@ def get_data(conversation_id, message_id, attachment_id):
     )
     return results
 
-
 def context_chat(user_input, conversation_id):
     message_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages"
     response = requests.post(
-        message_url, headers={
+        message_url,
+        headers={
             "Authorization": f"Bearer {st.session_state.user_access_token}",
             "Content-Type": "application/json"
         },
@@ -78,12 +265,12 @@ def context_chat(user_input, conversation_id):
     message_id = response.json().get("message_id")
     return response.json(), message_id
 
-
 def feedback(conversation_id, message_id, feedback_res):
     st.write("feedback_res is ", feedback_res)
     feedback_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/feedback"
     response = requests.post(
-        feedback_url, headers={
+        feedback_url,
+        headers={
             "Authorization": f"Bearer {st.session_state.user_access_token}",
             "Content-Type": "application/json"
         },
@@ -91,241 +278,7 @@ def feedback(conversation_id, message_id, feedback_res):
     )
     return response.json()
 
-
-# -----------------------------
-# Page setup
-# -----------------------------
-st.set_page_config(page_title="💬 Smart Data Assistant", layout="wide")
-
-# -----------------------------
-# Theming & CSS (UI ONLY)
-# -----------------------------
-st.markdown("""
-<style>
-/* Global reset / typography */
-:root {
-  --bg: #0b0f14;               /* dark canvas (like ChatGPT) */
-  --panel: #11161c;            /* chat panel background */
-  --panel-2: #0f141a;          /* header/composer background */
-  --text: #e8eef6;             /* primary text */
-  --text-dim: #b7c1d0;         /* secondary text */
-  --accent: #10a37f;           /* brand green */
-  --bubble-user: #1a2330;      /* user bubble */
-  --bubble-ai: #161d26;        /* ai bubble */
-  --code-bg: #0f1720;          /* code/sql bg */
-  --border: #1f2a37;           /* subtle border */
-  --shadow: rgba(0,0,0,0.35);
-}
-
-html, body, [data-testid="stAppViewContainer"] {
-  background: var(--bg);
-  color: var(--text);
-}
-
-/* Hide default Streamlit chrome for cleaner look */
-[data-testid="stToolbar"] { display: none !important; }
-#MainMenu { visibility: hidden; }
-footer { visibility: hidden; }
-
-/* Header bar */
-.header {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  backdrop-filter: blur(6px);
-  background: linear-gradient( to bottom, rgba(15,20,26,0.95), rgba(15,20,26,0.80) );
-  border-bottom: 1px solid var(--border);
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.header .title {
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.3px;
-}
-.header .chip {
-  margin-left: auto;
-  background: #0d1a14;
-  color: #97f3d9;
-  border: 1px solid #1b3a2d;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-}
-
-/* Main chat surface */
-.chat-surface {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 12px 0;
-  margin-top: 12px;
-  box-shadow: 0 6px 24px var(--shadow);
-  min-height: 68vh;
-}
-
-/* Each exchange (question+answer) aligns like ChatGPT */
-.turn {
-  padding: 8px 24px;
-}
-
-/* User message row */
-.row {
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  gap: 14px;
-  align-items: flex-start;
-  margin: 8px 0 6px 0;
-}
-
-/* Avatar */
-.avatar {
-  width: 40px; height: 40px;
-  border-radius: 8px;
-  display: grid; place-items: center;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  background: var(--panel-2);
-  font-size: 20px;
-}
-
-/* Bubbles */
-.bubble {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 12px 14px;
-  line-height: 1.55;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
-  color: var(--text);
-}
-.user { background: var(--bubble-user); }
-.assistant { background: var(--bubble-ai); }
-
-/* Question styling (keep your semantics but prettier) */
-.question-text {
-  font-weight: 500;
-  color: #e5edf7;
-}
-.answer-text {
-  color: var(--text);
-}
-
-/* SQL toggle + code block */
-.sql-toggle {
-  margin-top: 8px;
-}
-.sql-box {
-  background-color: var(--code-bg);
-  color: #d7e2f0;
-  padding: 12px;
-  border-radius: 12px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  border: 1px solid var(--border);
-  font-size: 13px;
-  white-space: pre-wrap;
-}
-
-/* Feedback buttons row */
-.feedback-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 10px;
-}
-.feedback-btn {
-  background-color: #14202b;
-  border-radius: 10px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: transform 0.06s ease, background 0.2s ease;
-  color: var(--text-dim);
-  font-size: 14px;
-}
-.feedback-btn:hover {
-  background: #0f1a24;
-  transform: translateY(-1px);
-}
-
-/* Dataframe wrapper */
-.df-wrap {
-  margin-top: 8px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-/* Sticky composer at bottom like ChatGPT */
-.composer {
-  position: sticky;
-  bottom: 0;
-  z-index: 60;
-  padding: 14px 0 6px 0;
-  background: linear-gradient( to top, rgba(17,22,28,0.98), rgba(17,22,28,0.90) );
-  border-top: 1px solid var(--border);
-  backdrop-filter: blur(6px);
-}
-.composer-inner {
-  display: grid;
-  grid-template-columns: 1fr 110px;
-  gap: 10px;
-  align-items: center;
-}
-.composer .send-btn {
-  background: var(--accent);
-  color: #041410;
-  font-weight: 700;
-  border: 0;
-  border-radius: 10px;
-  padding: 14px 14px;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(16,163,127,0.35);
-}
-.composer .send-btn:hover {
-  filter: brightness(1.05);
-}
-
-/* Make Streamlit inputs match dark theme */
-[data-testid="stTextInput"] input {
-  background: #0f141a;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 12px;
-}
-[data-testid="stTextInput"] label {
-  color: var(--text-dim) !important;
-}
-
-/* Surface spacing tweak to leave room for sticky composer */
-.bottom-spacer { height: 84px; }
-
-/* Subtle status spinner text */
-.status {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 4px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# Session state (unchanged keys)
-# -----------------------------
-if "conversation_id" not in st.session_state:
-    st.session_state.conversation_id = None
-if "show_sql" not in st.session_state:
-    st.session_state.show_sql = {}
-if "message_id" not in st.session_state:
-    st.session_state.message_id = None
-if "qa_history" not in st.session_state:
-    st.session_state.qa_history = []
-
-# -----------------------------
-# Dummy backend text generator (unchanged behavior)
-# -----------------------------
+# --- Dummy backend (unchanged logic) ---
 def generate_answer(question):
     simulated_responses = [
         "Sure! Let’s pull up the data for that.",
@@ -335,179 +288,216 @@ def generate_answer(question):
     answer_text = random.choice(simulated_responses)
     return answer_text
 
-# -----------------------------
-# Header Bar
-# -----------------------------
+# =========================================================
+# Sidebar (UI only)
+# =========================================================
+with st.sidebar:
+    st.markdown("### ⚙️ Session")
+    token_ok = bool(st.session_state.user_access_token)
+    st.markdown(
+        f"- **Databricks token:** {'✅ Found' if token_ok else '❌ Missing'}\n"
+        f"- **Space ID:** `{space_id}`\n"
+        f"- **Host:** `{host_name.replace('https://','')}`"
+    )
+    st.markdown("---")
+    st.caption("Tip: Use Enter to submit. Toggle SQL to inspect queries, and download results if needed.")
+
+# =========================================================
+# Header (UI only)
+# =========================================================
 st.markdown(
     """
-    <div class="header">
-      <div class="title">💬 Smart Data Assistant</div>
-      <div class="chip">Connected · Databricks Genie</div>
+    <div class="hero">
+      <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
+        <span class="badge">💬 Smart Data Assistant</span>
+      </div>
+      <h1>Ask questions. Get data-backed answers.</h1>
+      <div class="hero-sub">Databricks Genie + Streamlit. Cleaner, friendlier interface — same logic under the hood.</div>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# -----------------------------
-# Chat Surface Container
-# -----------------------------
+# =========================================================
+# Input section (UI only)
+# =========================================================
 with st.container():
-    st.markdown('<div class="chat-surface">', unsafe_allow_html=True)
+    st.markdown('<div class="input-slab">', unsafe_allow_html=True)
+    cols = st.columns([8, 1.2, 1.2])
+    user_input = cols[0].text_input(
+        "Ask me anything:",
+        placeholder="e.g., Show me top scoring students...",
+        label_visibility="collapsed"
+    )
+    with cols[1]:
+        submit = st.button("Send 🚀", use_container_width=True)
+    with cols[2]:
+        # purely UI helper to visually separate actions
+        st.write("")
+        st.write("")
+        st.caption("")
 
-    # --- Input section (moved to sticky composer but logic is identical) ---
-    # Keeping your variable names and submission flow exactly the same.
-    with st.container():
-        # We render the composer now but we still use your existing submit+user_input variables.
-        c1, c2, c3 = st.columns([1, 6, 1])
-        with c2:
-            st.markdown('<div class="composer">', unsafe_allow_html=True)
-            st.markdown('<div class="composer-inner">', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-            # Keep same widget types/names so behavior is unchanged
-            user_input = st.text_input("Ask me anything:", placeholder="Send a message...", label_visibility="collapsed", key="composer_input")
-            submit = st.button("Send", type="primary", use_container_width=True)
+# =========================================================
+# Submit handling (logic unchanged, just UI refinements)
+# =========================================================
+if submit and user_input.strip():
+    with st.spinner("Thinking..."):
+        # Prepend empty message for immediate visual slot
+        st.session_state.qa_history.insert(0, {
+            "question": user_input,
+            "answer_text": "",
+            "answer_df": None,
+            "sql": "",
+            "feedback": None
+        })
 
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Start or continue conversation (unchanged)
+        if st.session_state.conversation_id is None:
+            st.session_state.conversation_id, st.session_state.message_id = New_Chat(user_input)
+            conversation_id = st.session_state.conversation_id
+            message_id = st.session_state.message_id
+        else:
+            response, st.session_state.message_id = context_chat(user_input, st.session_state.conversation_id)
+            message_id = st.session_state.message_id
+            st.caption("↪️ Continuing existing conversation")
 
-    # --- Submission & core logic (UNCHANGED) ---
-    if submit and user_input.strip():
-        with st.spinner("Thinking..."):
-            # Insert empty response at top (preserve your order)
-            st.session_state.qa_history.insert(0, {
-                "question": user_input,
-                "answer_text": "",
-                "answer_df": None,
-                "sql": "",
-                "feedback": None
-            })
-
-            if st.session_state.conversation_id is None:
-                st.session_state.conversation_id, st.session_state.message_id = New_Chat(user_input)
-                conversation_id = st.session_state.conversation_id
-                message_id = st.session_state.message_id
-            else:
-                response, st.session_state.message_id = context_chat(user_input, st.session_state.conversation_id)
-                message_id = st.session_state.message_id
-                st.write("Existing Conversation")
-
+        # Poll message status (unchanged)
+        query_response = fetch_question_response(st.session_state.conversation_id, message_id)
+        while True:
             query_response = fetch_question_response(st.session_state.conversation_id, message_id)
-            while True:
-                query_response = fetch_question_response(st.session_state.conversation_id, message_id)
-                data = query_response.json()
-                time.sleep(5)
-                with st.spinner(data.get("status")):
-                    if data.get("status") in ("COMPLETED", "FAILED"):
-                        break
-
-            SQL = data.get("attachments")[0]["query"]["query"]
-            attachment_id = data.get("attachments")[0]["attachment_id"]
-            result_response = fetch_results(st.session_state.conversation_id, message_id, attachment_id)
-            result_fetch = get_data(st.session_state.conversation_id, message_id, attachment_id)
-
-            while True:
-                query_response = get_data(st.session_state.conversation_id, message_id, attachment_id)
-                data = query_response.json()
-                state = data["statement_response"]["status"]["state"]
-                if state in ("SUCCEEDED", "FAILED "):
+            data = query_response.json()
+            time.sleep(5)
+            with st.spinner(data.get("status")):
+                if data.get("status") in ("COMPLETED", "FAILED"):
                     break
 
-            columns = data["statement_response"]["manifest"]["schema"]["columns"]
-            col_names = [col["name"] for col in columns]
-            rows = data["statement_response"]["result"]["data_array"]
-            Answer = pd.DataFrame(rows, columns=col_names)
+        # Extract SQL + execute (unchanged)
+        SQL = data.get("attachments")[0]["query"]["query"]
+        attachment_id = data.get("attachments")[0]["attachment_id"]
+        _ = fetch_results(st.session_state.conversation_id, message_id, attachment_id)
 
-            # Simulate streaming effect (unchanged)
-            answer_text = generate_answer(user_input)
-            partial_text = ""
-            for ch in answer_text:
-                partial_text += ch
-                st.session_state.qa_history[0]["answer_text"] = partial_text
-                time.sleep(0.03)
+        # Poll for results (unchanged)
+        result_fetch = get_data(st.session_state.conversation_id, message_id, attachment_id)
+        while True:
+            query_response = get_data(st.session_state.conversation_id, message_id, attachment_id)
+            data = query_response.json()
+            state = data["statement_response"]["status"]["state"]
+            if state in ("SUCCEEDED", "FAILED "):
+                break
 
-            # Attach df and SQL
-            st.session_state.qa_history[0]["answer_df"] = Answer
-            st.session_state.qa_history[0]["sql"] = SQL
+        # Format dataframe (unchanged)
+        columns = data["statement_response"]["manifest"]["schema"]["columns"]
+        col_names = [col["name"] for col in columns]
+        rows = data["statement_response"]["result"]["data_array"]
+        Answer = pd.DataFrame(rows, columns=col_names)
 
-            if len(st.session_state.qa_history) > 50:
-                st.session_state.qa_history = st.session_state.qa_history[:50]
+        # Typewriter effect (unchanged)
+        answer_text = generate_answer(user_input)
+        partial_text = ""
+        for ch in answer_text:
+            partial_text += ch
+            st.session_state.qa_history[0]["answer_text"] = partial_text
+            time.sleep(0.03)
 
-    # --- Display chat history (UI ONLY CHANGED; logic intact) ---
-    # Render oldest -> newest so the latest appears at the bottom like ChatGPT,
-    # without changing how you store items (you still insert at index 0).
-    history_for_display = list(reversed(st.session_state.qa_history))
+        # Save results into message slot (unchanged)
+        st.session_state.qa_history[0]["answer_df"] = Answer
+        st.session_state.qa_history[0]["sql"] = SQL
 
-    for i_display, qa in enumerate(history_for_display):
-        # Map back to the original index for toggles/feedback keys
-        # original_idx: compute position in original list
-        original_idx = len(st.session_state.qa_history) - 1 - i_display
+        # Trim history if large (unchanged)
+        if len(st.session_state.qa_history) > 50:
+            st.session_state.qa_history = st.session_state.qa_history[:50]
 
-        # USER ROW
-        st.markdown('<div class="turn">', unsafe_allow_html=True)
-        st.markdown('<div class="row">', unsafe_allow_html=True)
-        st.markdown('<div class="avatar">🧑‍💻</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="bubble user"><div class="question-text">{qa["question"]}</div></div>',
-            unsafe_allow_html=True
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
+# =========================================================
+# Chat history render (UI only)
+# =========================================================
+for i, qa in enumerate(st.session_state.qa_history):
+    with st.container():
+        st.markdown(f"<div class='chat-container'>", unsafe_allow_html=True)
 
-        # ASSISTANT ROW
-        st.markdown('<div class="row">', unsafe_allow_html=True)
-        st.markdown('<div class="avatar">🤖</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="bubble assistant"><div class="answer-text">{qa["answer_text"]}</div>',
-            unsafe_allow_html=True
-        )
+        # Header row with tiny badges and index
+        top_cols = st.columns([0.7, 7.6, 1.7])
+        with top_cols[0]:
+            st.markdown(f"<span class='badge mono'>#{len(st.session_state.qa_history)-i}</span>", unsafe_allow_html=True)
+        with top_cols[1]:
+            st.caption("")
+        with top_cols[2]:
+            if qa["answer_df"] is not None and not qa["answer_df"].empty:
+                csv_buf = StringIO()
+                qa["answer_df"].to_csv(csv_buf, index=False)
+                st.download_button("Download CSV", data=csv_buf.getvalue(), file_name="answer.csv", mime="text/csv", key=f"dl_{i}", use_container_width=True)
 
-        # Dataframe
-        if qa["answer_df"] is not None:
-            st.markdown('</div>', unsafe_allow_html=True)  # close bubble open before dataframe
-            st.markdown('<div class="row"><div></div><div class="bubble assistant">', unsafe_allow_html=True)
-            st.markdown('<div class="df-wrap">', unsafe_allow_html=True)
-            st.dataframe(qa["answer_df"], use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        cols = st.columns(2, vertical_alignment="top")
 
-            # SQL toggle
-            if st.button(
-                "Show SQL" if not st.session_state.show_sql.get(original_idx) else "Hide SQL",
-                key=f"sqlbtn_{original_idx}",
-                use_container_width=True
-            ):
-                st.session_state.show_sql[original_idx] = not st.session_state.show_sql.get(original_idx, False)
+        # Question bubble
+        with cols[0]:
+            st.markdown(f"<div class='question-box'>🧠 {qa['question']}</div>", unsafe_allow_html=True)
 
-            if st.session_state.show_sql.get(original_idx):
-                st.markdown(f"<div class='sql-box'>{qa['sql']}</div>", unsafe_allow_html=True)
+        # Answer bubble + table + SQL controls
+        with cols[1]:
+            st.markdown(f"<div class='answer-box'>{qa['answer_text']}</div>", unsafe_allow_html=True)
 
-            # Feedback row
-            st.markdown('<div class="feedback-row">', unsafe_allow_html=True)
-            col1, col2, col3, col4 = st.columns([1, 1, 1, 6])
-            with col1:
-                if st.button("👍", key=f"good_{original_idx}"):
-                    qa["feedback"] = "POSITIVE"
-                    feedback(st.session_state.conversation_id, st.session_state.message_id, "POSITIVE")
-            with col2:
-                if st.button("😐", key=f"neutral_{original_idx}"):
-                    qa["feedback"] = "Neutral"
-                    feedback(st.session_state.conversation_id, st.session_state.message_id, "NONE")
-            with col3:
-                if st.button("👎", key=f"bad_{original_idx}"):
-                    qa["feedback"] = "NEGATIVE"
-                    feedback(st.session_state.conversation_id, st.session_state.message_id, "NEGATIVE")
-            with col4:
-                if qa.get("feedback"):
-                    st.markdown(f"**Feedback:** {qa['feedback']}")
+            if qa["answer_df"] is not None:
+                st.markdown("<div class='hr-soft'></div>", unsafe_allow_html=True)
+                st.caption("Result")
+                st.dataframe(qa["answer_df"], use_container_width=True, height=280)
 
-            st.markdown('</div>', unsafe_allow_html=True)  # close feedback-row
-            st.markdown('</div>', unsafe_allow_html=True)  # close bubble assistant wrapper
-        else:
-            # close assistant bubble if no dataframe block intervened
-            st.markdown('</div>', unsafe_allow_html=True)
+                # SQL controls row
+                ctrl_cols = st.columns([1.2, 1.1, 3.7, 3.0])
+                with ctrl_cols[0]:
+                    if st.button(
+                        "Show SQL" if not st.session_state.show_sql.get(i) else "Hide SQL",
+                        key=f"sqlbtn_{i}",
+                        use_container_width=True
+                    ):
+                        st.session_state.show_sql[i] = not st.session_state.show_sql.get(i, False)
+                with ctrl_cols[1]:
+                    # Copy SQL to clipboard is not directly possible; instead show a code block button below.
+                    # As a UI helper, put SQL into a text area when shown, easy to Cmd/Ctrl+C.
+                    st.caption("")
+                with ctrl_cols[2]:
+                    st.caption("")
+                with ctrl_cols[3]:
+                    if qa.get("sql"):
+                        st.download_button(
+                            "Download SQL",
+                            data=qa["sql"],
+                            file_name="query.sql",
+                            mime="text/plain",
+                            key=f"dlsql_{i}",
+                            use_container_width=True
+                        )
 
-        st.markdown('</div>', unsafe_allow_html=True)  # close row
-        st.markdown('</div>', unsafe_allow_html=True)  # close turn
+                # Show SQL pretty (UI only)
+                if st.session_state.show_sql.get(i):
+                    # Use st.code for nice formatting within a dark box
+                    st.markdown("<div class='hr-soft'></div>", unsafe_allow_html=True)
+                    st.caption("SQL")
+                    st.code(qa["sql"], language="sql")
 
-    # spacer so last messages aren't hidden behind sticky composer
-    st.markdown('<div class="bottom-spacer"></div>', unsafe_allow_html=True)
+                # Feedback row
+                fcols = st.columns([1, 1, 1, 6], vertical_alignment="center")
+                with fcols[0]:
+                    if st.button("👍", key=f"good_{i}", help="Mark helpful"):
+                        qa["feedback"] = "POSITIVE"
+                        feedback(st.session_state.conversation_id, st.session_state.message_id, "POSITIVE")
+                        st.toast("Thanks for the 👍", icon="✅")
+                with fcols[1]:
+                    if st.button("😐", key=f"neutral_{i}", help="Mark neutral"):
+                        qa["feedback"] = "Neutral"
+                        feedback(st.session_state.conversation_id, st.session_state.message_id, "NONE")
+                        st.toast("Feedback recorded", icon="✳️")
+                with fcols[2]:
+                    if st.button("👎", key=f"bad_{i}", help="Mark not helpful"):
+                        qa["feedback"] = "NEGATIVE"
+                        feedback(st.session_state.conversation_id, st.session_state.message_id, "NEGATIVE")
+                        st.toast("We’ll improve this.", icon="⚠️")
+                with fcols[3]:
+                    if qa["feedback"]:
+                        st.markdown(f"**Feedback:** {qa['feedback']}")
 
-    st.markdown('</div>', unsafe_allow_html=True)  # close chat-surface
+        st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<hr class='hr-soft'/>", unsafe_allow_html=True)
+st.caption("✨ Refreshed UI • Same functionality. Enjoy!")
