@@ -1,0 +1,273 @@
+import streamlit as st
+import pandas as pd
+import time
+import random
+import os 
+import requests
+
+if "user_access_token" not in st.session_state:
+    st.session_state.user_access_token = os.environ.get("DATABRICKS_TOKEN")
+host_name = "https://adb-640321604414221.1.azuredatabricks.net"
+space_id='01f0a7f4557013988ce0f20db008067e'
+Conversation_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/start-conversation"
+def New_Chat(user_input):
+    response = requests.post(
+            Conversation_url,
+            headers={
+                "Authorization": f"Bearer {st.session_state.user_access_token}",
+                "Content-Type": "application/json"
+            },
+            json={"content": user_input}
+        )
+    conversation_id = response.json().get("conversation_id")
+    message_id = response.json().get("message_id")
+    return conversation_id,message_id
+
+###
+
+def fetch_question_response(conversation_id, message_id): 
+    response_url =  f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}"
+    query_response = requests.get(
+                response_url,
+                headers={
+                    "Authorization": f"Bearer {st.session_state.user_access_token}",
+                    "Content-Type": "application/json"
+                }
+                
+            )
+    return query_response
+
+###
+def fetch_results(conversation_id,message_id,attachment_id): 
+    execute_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/attachments/{attachment_id}/execute-query"
+    results = requests.post(
+                execute_url,
+                headers={
+                    "Authorization": f"Bearer {st.session_state.user_access_token}",
+                    "Content-Type": "application/json"
+                }
+                
+            )
+    return results
+####
+def get_data (conversation_id,message_id,attachment_id): 
+    get_data_url =f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/attachments/{attachment_id}/query-result"
+    results = requests.get(
+                get_data_url,
+                headers={
+                    "Authorization": f"Bearer {st.session_state.user_access_token}",
+                    "Content-Type": "application/json"
+                }
+                
+            )
+    return results
+
+### 
+def context_chat(user_input,conversation_id):
+    message_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages"
+    response = requests.post(
+           message_url ,headers={
+                    "Authorization": f"Bearer {st.session_state.user_access_token}",
+                    "Content-Type": "application/json"
+                },
+            json={"content": user_input}
+                )
+    message_id = response.json().get("message_id")
+    return response.json(),message_id
+###
+def feedback(conversation_id,message_id,feedback_res):
+    st.write("feedback_res is ",feedback_res)
+    feedback_url = f"{host_name}/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages/{message_id}/feedback"
+    
+    response = requests.post(
+           feedback_url,headers={
+                    "Authorization": f"Bearer {st.session_state.user_access_token}",
+                    "Content-Type": "application/json"
+                },
+          json= {"rating":feedback_res})
+    return response.json()
+
+
+
+# --- Page setup ---
+st.set_page_config(page_title="💬 Smart Data Assistant", layout="wide")
+
+# --- Custom CSS for beautification ---
+st.markdown("""
+<style>
+.chat-container {
+    background-color: #f9fafb;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+.question-box {
+    background-color: #e8f0fe;
+    padding: 0.8rem;
+    border-radius: 10px;
+    font-weight: 600;
+    color: #1a237e;
+}
+.answer-box {
+    background-color: #ffffff;
+    padding: 0.8rem;
+    border-radius: 10px;
+    color: #212121;
+}
+.feedback-btn {
+    background-color: #f1f3f4;
+    border-radius: 8px;
+    padding: 0.3rem 0.6rem;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.feedback-btn:hover {
+    background-color: #e0e0e0;
+}
+.sql-box {
+    background-color: #272822;
+    color: #f8f8f2;
+    padding: 0.5rem;
+    border-radius: 8px;
+    font-family: monospace;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --- Session state ---
+if "conversation_id" not in st.session_state: 
+    st.session_state.conversation_id = None
+if "show_sql" not in st.session_state: 
+    st.session_state.show_sql = {}
+if "message_id" not in st.session_state: 
+    st.session_state.message_id = None
+if "qa_history" not in st.session_state:
+    st.session_state.qa_history = []
+
+
+# --- Dummy backend ---
+def generate_answer(question):
+    """Simulated backend call returning a text answer, DataFrame, and SQL."""
+    simulated_responses = [
+        "Sure! Let’s pull up the data for that.",
+        "Fetching the information you requested…",
+        "Here’s what I found in the dataset."
+        
+    ]
+    answer_text = random.choice(simulated_responses)
+    
+    return answer_text
+
+# --- Input section ---
+st.title("💬 Smart Data Assistant")
+
+with st.container():
+    cols = st.columns([8, 1])
+    user_input = cols[0].text_input("Ask me anything:", placeholder="e.g., Show me top scoring students...")
+    submit = cols[1].button("Send", use_container_width=True)
+
+if submit and user_input.strip():
+    with st.spinner("Thinking..."):
+        # Insert empty response placeholder at top
+        st.session_state.qa_history.insert(0, {
+            "question": user_input,
+            "answer_text": "",
+            "answer_df": None,
+            "sql": "",
+            "feedback": None
+        })
+        if st.session_state.conversation_id is None:
+            st.session_state.conversation_id,st.session_state.message_id = New_Chat(user_input)
+            conversation_id = st.session_state.conversation_id
+            message_id = st.session_state.message_id
+        else:
+            response,st.session_state.message_id = context_chat(user_input,st.session_state.conversation_id)
+            message_id = st.session_state.message_id
+            st.write("Existing Conversation")
+        query_response = fetch_question_response(st.session_state.conversation_id, message_id)
+        # st.write(query_response.json())
+        while True : 
+            query_response = fetch_question_response(st.session_state.conversation_id, message_id)
+            data=query_response.json()
+            time.sleep(5)
+            # st.write(data.get("status"))
+            with st.spinner(data.get("status")):
+                if data.get("status") in("COMPLETED","FAILED"):
+                    break
+        SQL=data.get("attachments")[0]["query"]["query"]
+        # st.write(SQL)
+        attachment_id = data.get("attachments")[0]["attachment_id"]
+        result_response = fetch_results(st.session_state.conversation_id,message_id,attachment_id)
+        result_fetch = get_data(st.session_state.conversation_id,message_id,attachment_id)
+        while True : 
+            query_response = get_data(st.session_state.conversation_id, message_id,attachment_id)
+            data=query_response.json()
+            state = data["statement_response"]["status"]["state"]
+            if state in("SUCCEEDED","FAILED "):
+                break 
+        columns = data["statement_response"]["manifest"]["schema"]["columns"]
+        col_names = [col["name"] for col in columns]
+        rows = data["statement_response"]["result"]["data_array"]
+
+        # Convert to Pandas DataFrame for Streamlit
+        Answer = pd.DataFrame(rows, columns=col_names)
+        # Simulate streaming effect
+        answer_text = generate_answer(user_input)
+        partial_text = ""
+        for ch in answer_text:
+            partial_text += ch
+            st.session_state.qa_history[0]["answer_text"] = partial_text
+            time.sleep(0.03)
+            # st.experimental_rerun()
+
+        # Once text done, add dataframe and SQL
+        st.session_state.qa_history[0]["answer_df"] = Answer
+        st.session_state.qa_history[0]["sql"] = SQL
+        if len(st.session_state.qa_history) > 50:
+            st.session_state.qa_history = st.session_state.qa_history[:50]
+        # st.experimental_rerun()
+
+# --- Display chat history ---
+for i, qa in enumerate(st.session_state.qa_history):
+    with st.container():
+        st.markdown(f"<div class='chat-container'>", unsafe_allow_html=True)
+        cols = st.columns(2)
+
+        # Question
+        with cols[0]:
+            st.markdown(f"<div class='question-box'>🧠 {qa['question']}</div>", unsafe_allow_html=True)
+
+        # Answer
+        with cols[1]:
+            st.markdown(f"<div class='answer-box'>{qa['answer_text']}</div>", unsafe_allow_html=True)
+
+            if qa["answer_df"] is not None:
+                st.dataframe(qa["answer_df"], use_container_width=True)
+                if st.button(
+                    "Show SQL" if not st.session_state.show_sql.get(i) else "Hide SQL",
+                    key=f"sqlbtn_{i}",
+                    use_container_width=True
+                ):
+                    st.session_state.show_sql[i] = not st.session_state.show_sql.get(i, False)
+                if st.session_state.show_sql.get(i):
+                    st.markdown(f"<div class='sql-box'>{qa['sql']}</div>", unsafe_allow_html=True)
+
+                fcols = st.columns([1, 1, 1, 6])
+                if fcols[0].button("👍", key=f"good_{i}"):
+                    qa["feedback"] = "POSITIVE"
+                    feedback(st.session_state.conversation_id,st.session_state.message_id,"POSITIVE")
+                if fcols[1].button("😐", key=f"neutral_{i}"):
+                    qa["feedback"] = "Neutral"
+                    feedback(st.session_state.conversation_id,st.session_state.message_id,"NONE")
+                if fcols[2].button("👎", key=f"bad_{i}"):
+                    qa["feedback"] = "NEGATIVE"
+                    feedback(st.session_state.conversation_id,st.session_state.message_id,"NEGATIVE")
+                if qa["feedback"]:
+                    fcols[3].markdown(f"**Feedback:** {qa['feedback']}")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<hr>", unsafe_allow_html=True)
+# st.caption("✨ Powered by Streamlit — elegant, responsive, and interactive")
